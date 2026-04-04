@@ -146,10 +146,10 @@ date_classification:
     2: autre_date
 
   # Fenêtre contextuelle autour de la phrase candidate
-  # context_window=3 → phrase[i-3 : i+3] concaténées
-  # Augmenté de 2→3 : le modèle voit plus de contexte pour mieux distinguer
-  # accident / consolidation / autre (améliore F1 consolidation)
-  context_window: 3
+  # context_window=2 → phrase[i-2 : i+2] concaténées
+  # Revenu à 2 : context_window=3 empirait les résultats (66% vs 74% accident)
+  # sur un petit dataset, plus de contexte = plus de bruit
+  context_window: 2
 
   # Max tokens pour les phrases candidates (256 suffit pour des phrases courtes)
   max_length: 256
@@ -174,14 +174,13 @@ date_classification:
 
   # Seuil de confiance pour la classe consolidation
   # Si proba_max(consolidation) < threshold → prédire "n.c."
-  # Augmenté 0.4→0.55 : réduit les faux positifs consolidation
-  # (75 "autre_date" étaient classées consolidation au run précédent)
-  threshold_consolidation: 0.55
+  # Augmenté 0.55→0.65 : précision consolidation trop basse (35%), forcer plus de confiance
+  threshold_consolidation: 0.65
 
   # Seuil de confiance pour la classe accident
   # Si proba_max(accident) < threshold → prédire "n.c."
-  # Ajouté car 0/3 cas n.c. accident étaient bien prédits au run précédent
-  threshold_accident: 0.4
+  # Monté 0.4→0.55 : précision accident trop basse (53%), 96 faux positifs dans confusion matrix
+  threshold_accident: 0.55
 
 
 # -----------------------------------------------------------------------------
