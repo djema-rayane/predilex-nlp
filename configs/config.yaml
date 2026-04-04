@@ -174,8 +174,9 @@ date_classification:
 
   # Seuil de confiance pour la classe consolidation
   # Si proba_max(consolidation) < threshold → prédire "n.c."
-  # Augmenté 0.55→0.65 : précision consolidation trop basse (35%), forcer plus de confiance
-  threshold_consolidation: 0.65
+  # Baissé 0.65→0.45 : threshold=0.65 trop agressif, ratait 25/44 vraies dates (43% seulement)
+  # n.c. parfait (33/33) mais trop de faux "n.c." sur les docs avec vraie date
+  threshold_consolidation: 0.45
 
   # Seuil de confiance pour la classe accident
   # Si proba_max(accident) < threshold → prédire "n.c."
