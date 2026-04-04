@@ -162,7 +162,8 @@ def predict_dates_for_document(
     label2id: dict,
     context_window: int = 2,
     max_length: int = 256,
-    consolidation_threshold: float = 0.4,
+    consolidation_threshold: float = 0.55,
+    accident_threshold: float = 0.4,
 ) -> dict:
     """
     Pour un document, prédit date_accident et date_consolidation.
@@ -170,25 +171,26 @@ def predict_dates_for_document(
     Algorithme :
       1. Extraire toutes les phrases candidates (regex)
       2. Classifier chaque phrase (CamemBERT → 3 classes)
-      3. date_accident      = date de la phrase avec max proba_accident
+      3. date_accident      = date de la phrase avec max proba_accident,
+                             si max_proba > accident_threshold sinon "n.c."
       4. date_consolidation = date de la phrase avec max proba_consolidation,
-                             si max_proba > threshold, sinon "n.c."
+                             si max_proba > consolidation_threshold sinon "n.c."
 
-    Pourquoi un seuil pour la consolidation mais pas pour l'accident ?
-      La consolidation est n.c. dans 42% des cas → le modèle doit pouvoir
-      "décider" qu'il n'y en a pas. Sans seuil, il prédirait toujours une date.
-      L'accident est presque toujours présent (4% de n.c.) → pas de seuil.
+    Seuils :
+      accident_threshold     = 0.4  (4% de n.c. → seuil bas)
+      consolidation_threshold = 0.55 (42% de n.c. → seuil plus élevé)
 
     Parameters
     ----------
-    text                   : texte brut du document
-    model                  : CamemBERT fine-tuné
-    tokenizer              : tokenizer CamemBERT
-    device                 : cuda ou cpu
-    label2id               : mapping label → id
-    context_window         : fenêtre de contexte (identique à l'entraînement)
-    max_length             : longueur max en tokens
-    consolidation_threshold: seuil de confiance pour la consolidation
+    text                    : texte brut du document
+    model                   : CamemBERT fine-tuné
+    tokenizer               : tokenizer CamemBERT
+    device                  : cuda ou cpu
+    label2id                : mapping label → id
+    context_window          : fenêtre de contexte (identique à l'entraînement)
+    max_length              : longueur max en tokens
+    consolidation_threshold : seuil de confiance pour la consolidation
+    accident_threshold      : seuil de confiance pour l'accident
 
     Returns
     -------
@@ -223,10 +225,15 @@ def predict_dates_for_document(
     acc_id  = label2id["date_accident"]
     cons_id = label2id["date_consolidation"]
 
-    # Meilleure date_accident (toujours prédire quelque chose)
+    # Meilleure date_accident (avec seuil)
     acc_scores = probs[:, acc_id]
     best_acc_idx = int(np.argmax(acc_scores))
-    predicted_accident = dates[best_acc_idx] if dates[best_acc_idx] else "n.c."
+    best_acc_score = float(acc_scores[best_acc_idx])
+
+    if best_acc_score >= accident_threshold and dates[best_acc_idx]:
+        predicted_accident = dates[best_acc_idx]
+    else:
+        predicted_accident = "n.c."
 
     # Meilleure date_consolidation (avec seuil)
     cons_scores = probs[:, cons_id]
@@ -241,7 +248,7 @@ def predict_dates_for_document(
     return {
         "date_accident": predicted_accident,
         "date_consolidation": predicted_consolidation,
-        "_acc_score": float(acc_scores[best_acc_idx]),
+        "_acc_score": best_acc_score,
         "_cons_score": best_cons_score,
     }
 
@@ -286,6 +293,7 @@ def main():
     max_length = date_cfg["max_length"]
     output_dir = date_cfg["output_dir"]
     threshold = date_cfg["threshold_consolidation"]
+    threshold_acc = date_cfg.get("threshold_accident", 0.4)
 
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     tokenizer = load_tokenizer(cfg["model"]["name"])
@@ -304,7 +312,7 @@ def main():
         for _, row in test_df.iterrows():
             preds = predict_dates_for_document(
                 row["text"], model, tokenizer, device,
-                label2id, context_window, max_length, threshold
+                label2id, context_window, max_length, threshold, threshold_acc
             )
             results.append({
                 "filename": row["filename"],
