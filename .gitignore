@@ -1,0 +1,56 @@
+# =============================================================================
+# .gitignore — Projet Predilex NLP
+# =============================================================================
+
+# --- Données brutes (trop lourdes pour Git, à mettre sur Google Drive) ---
+data/raw/
+data/processed/
+
+# --- Modèles entraînés (trop lourds, sauvegardés sur Drive après Colab) ---
+models/
+
+# --- Checkpoints HuggingFace Trainer (temporaires) ---
+models/sex_classifier/checkpoint-*/
+models/date_classifier/checkpoint-*/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+*.so
+.eggs/
+
+# --- Environnements virtuels ---
+venv/
+env/
+.venv/
+.env/
+
+# --- Jupyter ---
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- IDE ---
+.vscode/
+.idea/
+*.code-workspace
+
+# --- Claude Code (interne, ne pas versionner) ---
+.claude/
+
+# --- Logs ---
+*.log
+runs/
+logs/
+wandb/

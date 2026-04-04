@@ -1,0 +1,190 @@
+# =============================================================================
+# config.yaml — Configuration centrale du projet Predilex NLP
+# =============================================================================
+#
+# Ce fichier centralise TOUS les hyperparamètres, chemins et choix techniques.
+# Il suffit de modifier ce fichier pour reconfigurer une expérience sans
+# toucher au code source.
+#
+# Structure du projet :
+#   data/raw/           → données brutes (CSV + fichiers texte)
+#   data/processed/     → sorties intermédiaires (phrases extraites, etc.)
+#   models/             → modèles fine-tunés sauvegardés
+#   src/                → code source Python
+#   notebooks/          → exploration et analyse
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# CHEMINS
+# -----------------------------------------------------------------------------
+paths:
+  # --- Données d'entraînement ---
+  # Y_train_predilex.csv : labels (ID, sexe, date_accident, date_consolidation)
+  y_train_file: "data/raw/Y_train_predilex.csv"
+  # x_train_ids.csv : mapping ID → nom de fichier .txt
+  x_train_ids_file: "data/raw/x_train_ids.csv"
+  # Dossier contenant les 770 décisions juridiques (.txt)
+  x_train_txt_dir: "data/raw/txt_files"
+
+  # --- Données de test (compétition) ---
+  # À renseigner quand le test set sera disponible
+  x_test_ids_file: "data/raw/x_test_ids.csv"
+  x_test_txt_dir: "data/raw/x_test_txt_files"
+
+  # --- Sorties ---
+  processed_data_dir: "data/processed"
+  models_dir: "models"
+  # Fichier de soumission généré par predict.py
+  submission_file: "data/processed/submission.csv"
+
+
+# -----------------------------------------------------------------------------
+# MODÈLE DE BASE
+# -----------------------------------------------------------------------------
+model:
+  # camembert-base : transformer pré-entraîné exclusivement sur du français
+  # (Oscar + Common Crawl FR, 138M paramètres)
+  #
+  # Pourquoi camembert-base et pas un modèle plus grand ?
+  #   → 770 documents = dataset PETIT. Un modèle large (camembert-large,
+  #     xlm-roberta-large, 330M+ params) risque l'overfitting.
+  #   → camembert-base est French-specific : meilleure tokenisation SentencePiece
+  #     pour le vocabulaire juridique français que XLM-RoBERTa (multilingual).
+  #   → La vraie différence viendra du pipeline, pas de la taille du modèle.
+  name: "camembert-base"
+
+  # Limite dure du transformer : 512 tokens (position embeddings fixes).
+  # Tous nos documents dépassent 512 tokens (moy. 3315 mots).
+  # → Stratégie de truncation définie par tâche ci-dessous.
+  max_length: 512
+
+
+# -----------------------------------------------------------------------------
+# TÂCHE 1 : CLASSIFICATION DU SEXE (binaire)
+# -----------------------------------------------------------------------------
+# Tâche : prédire si la victime est un homme ou une femme.
+#
+# Observations sur les données :
+#   - 559 homme / 206 femme / 5 n.c.  →  déséquilibre 73% / 27%
+#   - Le signal (Monsieur/Madame, il/elle) est en médiane à 3.7% du texte
+#   - Les 512 premiers tokens capturent ce signal dans 94% des cas
+#
+# Choix technique :
+#   - Truncation "head" (512 premiers tokens) suffisante pour ce signal précoce
+#   - Class weights pour compenser le déséquilibre 73/27
+# -----------------------------------------------------------------------------
+sex_classification:
+  output_dir: "models/sex_classifier"
+
+  num_labels: 2
+  label2id:
+    homme: 0
+    femme: 1
+  id2label:
+    0: homme
+    1: femme
+
+  # Stratégie de truncation pour les documents longs
+  #   "head"      : premiers 512 tokens (recommandé ici, signal en début)
+  #   "head_tail" : 256 premiers + 256 derniers tokens (si signal dispersé)
+  truncation_strategy: "head"
+
+  # Hyperparamètres d'entraînement
+  num_epochs: 5
+  batch_size: 8           # petit batch pour stabilité (peu de données)
+  learning_rate: 2.0e-5   # standard fine-tuning BERT
+  warmup_ratio: 0.1       # 10% des steps en warmup (évite les divergences)
+  weight_decay: 0.01      # L2 regularization légère
+
+  # Splits
+  val_split: 0.15         # 15% pour validation
+  test_split: 0.10        # 10% pour évaluation finale interne
+  seed: 42
+
+  # Early stopping : arrêt si f1_weighted ne s'améliore pas pendant N epochs
+  early_stopping_patience: 2
+  metric_for_best_model: "f1_weighted"
+
+  # Mixed precision (fp16) : activer si GPU CUDA disponible, sinon false
+  fp16: true
+
+
+# -----------------------------------------------------------------------------
+# TÂCHE 2+3 : EXTRACTION DES DATES (accident + consolidation)
+# -----------------------------------------------------------------------------
+# Tâche : pour chaque décision, identifier la date_accident et date_consolidation.
+#
+# Pipeline hybride :
+#   1. Regex → extraction déterministe de toutes les phrases contenant une date
+#   2. CamemBERT → classification 3 classes de chaque phrase candidate :
+#        - date_accident      (0) : "le 9 avril 1991, X... a été victime..."
+#        - date_consolidation (1) : "consolidation fixée au 7 novembre 1982..."
+#        - autre_date         (2) : toute autre date (jugement, rapport, etc.)
+#   3. Logique métier : retenir la phrase avec le meilleur score par catégorie
+#
+# Observations sur les données :
+#   - 33 dates en moyenne par document → ~25 400 phrases candidates totales
+#   - ~770 accidents + ~450 consolidations + ~24 180 autres → ratio 1:25
+#   - date_consolidation = n.c./n.a. dans 42% des cas (seuil crucial)
+#
+# Choix technique :
+#   - Phrases courtes → max_length=256 (plus rapide, suffisant)
+#   - Oversampling des classes rares (accident + consolidation)
+#   - Seuil calibré sur validation pour prédire n.c.
+# -----------------------------------------------------------------------------
+date_classification:
+  output_dir: "models/date_classifier"
+
+  num_labels: 3
+  label2id:
+    date_accident: 0
+    date_consolidation: 1
+    autre_date: 2
+  id2label:
+    0: date_accident
+    1: date_consolidation
+    2: autre_date
+
+  # Fenêtre contextuelle autour de la phrase candidate
+  # context_window=2 → phrase[i-2 : i+2] concaténées
+  # Plus de contexte = meilleure compréhension sémantique de la date
+  context_window: 2
+
+  # Max tokens pour les phrases candidates (256 suffit pour des phrases courtes)
+  max_length: 256
+
+  # Hyperparamètres
+  num_epochs: 5
+  batch_size: 16          # plus grand batch possible (phrases courtes)
+  learning_rate: 2.0e-5
+  warmup_ratio: 0.1
+  weight_decay: 0.01
+
+  val_split: 0.15
+  seed: 42
+  early_stopping_patience: 2
+  metric_for_best_model: "f1_macro"  # f1_macro pour tenir compte des classes rares
+
+  fp16: true
+
+  # Ratio minimum des classes minoritaires vs classe majoritaire après oversampling
+  # 0.3 → chaque classe rare atteint au moins 30% de "autre_date"
+  oversample_ratio: 0.3
+
+  # Seuil de confiance pour la classe consolidation
+  # Si proba_max(consolidation) < threshold → prédire "n.c."
+  # À calibrer sur le validation set (voir train_dates.py --calibrate)
+  # Valeur initiale conservative : 0.4
+  threshold_consolidation: 0.4
+
+
+# -----------------------------------------------------------------------------
+# LOGGING
+# -----------------------------------------------------------------------------
+logging:
+  # Weights & Biases (optionnel, désactivé par défaut)
+  use_wandb: false
+  wandb_project: "predilex-nlp"
+
+  # Fréquence de log des métriques (en steps)
+  log_steps: 50
