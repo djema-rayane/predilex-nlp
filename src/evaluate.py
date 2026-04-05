@@ -220,6 +220,7 @@ def evaluate_date_predictions(
     results = {}
 
     for col in ["date_accident", "date_consolidation"]:
+        pred_col = col.replace("date_", "pred_")  # date_accident → pred_accident
         correct = 0
         total = len(test_df)
         nc_gt_correct = 0
@@ -233,7 +234,9 @@ def evaluate_date_predictions(
                 continue
 
             gt = str(row[col]).strip().lower()
-            pred = str(pred_rows[col].values[0]).strip().lower()
+            # Support both old format (date_accident) and new format (pred_accident)
+            lookup_col = pred_col if pred_col in preds_df.columns else col
+            pred = str(pred_rows[lookup_col].values[0]).strip().lower()
 
             is_nc_gt = gt in NC_VALUES
             is_nc_pred = pred in NC_VALUES
@@ -247,7 +250,7 @@ def evaluate_date_predictions(
                 date_gt_total += 1
                 # Comparaison case-insensitive, normalisation légère
                 gt_norm = str(row[col]).strip()
-                pred_norm = str(pred_rows[col].values[0]).strip()
+                pred_norm = str(pred_rows[lookup_col].values[0]).strip()
                 if gt_norm == pred_norm:
                     correct += 1
                     date_gt_correct += 1
