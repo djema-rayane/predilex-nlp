@@ -487,8 +487,12 @@ def main():
         )
         doc_predictions.append({
             "filename": row["filename"],
-            "date_accident": preds["date_accident"],
-            "date_consolidation": preds["date_consolidation"],
+            "pred_accident": preds["date_accident"],
+            "true_accident": row["date_accident"],
+            "accident_ok": preds["date_accident"] == row["date_accident"],
+            "pred_consolidation": preds["date_consolidation"],
+            "true_consolidation": row["date_consolidation"],
+            "consolidation_ok": preds["date_consolidation"] == row["date_consolidation"],
         })
 
     print("\n  === Précision au niveau document ===")
