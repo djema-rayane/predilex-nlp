@@ -405,10 +405,24 @@ def label_date_sentences(
             if dn is None:
                 continue
 
-            # Assignation du label
+            # Assignation du label — matching exact YYYY-MM-DD en priorité,
+            # puis matching souple sur YYYY-MM (mois+année) si le jour diffère.
+            # Justification : parfois le texte dit "en avril 1991" sans jour exact
+            # → le regex extrait une date avec jour=1 par défaut mais le CSV a
+            # le vrai jour → sans matching souple, ces phrases ne sont jamais
+            # labellées "accident" alors qu'elles contiennent le bon signal.
+            dn_month = dn[:7] if dn else ""  # YYYY-MM
+            acc_month = date_acc[:7] if date_acc else ""
+            cons_month = date_cons[:7] if date_cons else ""
+
             if date_acc and dn == date_acc:
                 label = label2id["date_accident"]
+            elif date_acc and dn_month == acc_month and dn != date_acc:
+                # Même mois+année → probablement la bonne phrase, label partiel
+                label = label2id["date_accident"]
             elif date_cons and dn == date_cons:
+                label = label2id["date_consolidation"]
+            elif date_cons and dn_month == cons_month and dn != date_cons:
                 label = label2id["date_consolidation"]
             else:
                 label = label2id["autre_date"]

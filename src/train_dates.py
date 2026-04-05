@@ -83,6 +83,40 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
+# WeightedTrainer — Loss pondérée pour les classes rares
+# =============================================================================
+
+class WeightedDateTrainer(Trainer):
+    """
+    Trainer avec CrossEntropyLoss pondérée pour les 3 classes de dates.
+
+    Problème : même après oversampling, la loss standard traite les 3 classes
+    de manière égale. Avec ~50% autre_date dans le batch, le gradient est dominé
+    par cette classe majoritaire.
+
+    Solution : pondérer inversement proportionnellement à la fréquence de classe.
+    Les classes rares (accident, consolidation) ont un poids plus élevé →
+    le modèle pénalise plus fortement les erreurs sur ces classes.
+
+    Identique au WeightedTrainer du sexe, mais avec 3 classes.
+    """
+
+    def __init__(self, class_weights: torch.Tensor, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.class_weights = class_weights
+
+    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
+        labels = inputs.pop("labels")
+        outputs = model(**inputs)
+        logits = outputs.logits
+        loss_fn = torch.nn.CrossEntropyLoss(
+            weight=self.class_weights.to(logits.device)
+        )
+        loss = loss_fn(logits, labels)
+        return (loss, outputs) if return_outputs else loss
+
+
+# =============================================================================
 # Oversampling des classes rares
 # =============================================================================
 
@@ -381,7 +415,7 @@ def main():
     )
 
     # --------------------------------------------------------------------------
-    # 5. Datasets PyTorch
+    # 5. Datasets PyTorch + calcul des poids de classe
     # --------------------------------------------------------------------------
     logger.info("=== [5/8] Construction des datasets ===")
     train_dataset = DateDataset(
@@ -396,6 +430,18 @@ def main():
         test_sent["context"].tolist(), test_sent["label"].tolist(),
         tokenizer, max_length
     )
+
+    # Calcul des poids de classe (inversement proportionnels à la fréquence)
+    # Même après oversampling, "autre_date" reste majoritaire dans le batch
+    label_counts = train_sent["label"].value_counts().sort_index()
+    total = label_counts.sum()
+    n_classes = date_cfg["num_labels"]
+    class_weights = torch.tensor(
+        [total / (n_classes * label_counts.get(i, 1)) for i in range(n_classes)],
+        dtype=torch.float,
+    )
+    logger.info(f"Poids de classe : accident={class_weights[0]:.3f}, "
+                f"consolidation={class_weights[1]:.3f}, autre={class_weights[2]:.3f}")
 
     # --------------------------------------------------------------------------
     # 6. Modèle + arguments d'entraînement
@@ -440,7 +486,8 @@ def main():
         )
     ]
 
-    trainer = Trainer(
+    trainer = WeightedDateTrainer(
+        class_weights=class_weights,
         model=model,
         args=training_args,
         train_dataset=train_dataset,
