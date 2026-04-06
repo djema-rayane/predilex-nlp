@@ -177,7 +177,7 @@ def main():
     evaluate(freq_acc,  true_acc,  "date_accident")
     evaluate(freq_cons, true_cons, "date_consolidation")
 
-    print("\n" * 60)
+    print("\n" + "=" * 60)
     print("BASELINE 3 — Regex + mots-clés")
     print("=" * 60)
     evaluate(kw_acc,  true_acc,  "date_accident")
