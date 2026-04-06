@@ -486,8 +486,7 @@ def main():
         )
     ]
 
-    trainer = WeightedDateTrainer(
-        class_weights=class_weights,
+    trainer = Trainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset,

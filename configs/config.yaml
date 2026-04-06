@@ -155,9 +155,9 @@ date_classification:
   max_length: 256
 
   # Hyperparamètres
-  num_epochs: 6
+  num_epochs: 5
   batch_size: 16          # plus grand batch possible (phrases courtes)
-  learning_rate: 1.0e-5   # baissé 2e-5→1e-5 : plus stable sur petit dataset
+  learning_rate: 2.0e-5
   warmup_ratio: 0.1
   weight_decay: 0.01
 
@@ -169,9 +169,8 @@ date_classification:
   fp16: true
 
   # Ratio minimum des classes minoritaires vs classe majoritaire après oversampling
-  # 0.5 → chaque classe rare atteint au moins 50% de "autre_date" (était 0.3)
-  # Augmenté car précision trop basse (53% accident, 39% consolidation)
-  oversample_ratio: 0.5
+  # 0.3 → chaque classe rare atteint au moins 30% de "autre_date"
+  oversample_ratio: 0.3
 
   # Seuil de confiance pour la classe consolidation
   # Si proba_max(consolidation) < threshold → prédire "n.c."
